@@ -1,0 +1,75 @@
+# -*- coding: utf-8 -*-
+"""
+Spyder Editor
+
+This script is to analyze cumulative conversion numbers per delay(1-30).
+"""
+
+import numpy as np
+import pandas as pd
+import datetime
+import matplotlib.pyplot as plt
+data = pd.read_csv("13572.csv.gz")
+
+
+# Convert date string to date type
+def str2date(x):
+    return datetime.datetime.strptime(x,"%Y-%m-%d").date()
+
+#ReportDate = [str2date(d) for d in data['report_date']]
+#ClickDate = [str2date(d) for d in data['click_date']]
+ReportDate = list(map(str2date, data['report_date']))
+ClickDate = list(map(str2date, data['click_date']))
+delay = [a - b for a, b in zip(ReportDate, ClickDate)]
+delay = [a.days for a in delay]
+data['delay'] = delay
+
+# Calculate mean conversion number per delay
+data_group = data.groupby(['delay'])
+data_mean = data_group.mean()
+data_mean.reset_index(inplace = True)
+
+# Calculate incremental conversions
+c = np.array(data_mean['conversions'])
+data_mean['ic'] = np.concatenate((np.array([c[0]]), c[1:]-c[:-1]), axis=0)
+
+# fit function of conversion number on delay
+from scipy.optimize import curve_fit
+
+def conv_lag(x, a, b, c):
+    return a + b * np.exp(c*x)
+
+(par, cov) = curve_fit(conv_lag, data_mean["delay"], data_mean["ic"], p0=[3, 1, -0.2])
+[a, b, c] = par
+print('a = %f, b = %f, c = %f)' % (a, b, c))
+# fitted value of incremental conversion numbers
+ic = [conv_lag(x, a, b, c) for x in data_mean["delay"]]
+# Plot data and fitted values
+plt.plot(data_mean['delay'], ic, '.-', label='fit')
+plt.plot(data_mean['delay'], data_mean['ic'], 'o', label='data')
+plt.legend(loc='best')
+plt.xlabel('delay: days')
+plt.ylabel('incremental conversion number')
+plt.show()
+
+# Fit cumulative conversion numbers,   + d*x
+
+def log_fit(x, a, b, c, d):
+    return a + b*np.exp(c*x) + d*x
+delay_array = np.array(data_mean['delay'])
+#delay_array[0] = np.mean(delay_array[:2])
+conv_array = np.array(data_mean['conversions'])
+#conv_array[0] = np.mean(conv_array[:2])
+(par2, ac) = curve_fit(log_fit, delay_array[0:], conv_array[0:], p0=[17, -13.209, -0.507, 0.0357])
+print(par2)
+conv = [log_fit(x, par2[0], par2[1], par2[2], par2[3]) for x in delay_array]
+plt.figure()
+plt.plot(data_mean['delay'], conv, '.-', label='fit')
+plt.plot(data_mean['delay'], data_mean['conversions'], 'o', label='data')
+plt.legend()
+plt.title('conversion numbers')
+plt.xlabel('delay: days')
+plt.ylabel('cumulative conversion number')
+plt.show()
+
+
